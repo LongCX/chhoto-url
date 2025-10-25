@@ -24,7 +24,18 @@ COPY ./actix/src ./src
 RUN cargo build --release --target=$target --locked --bin chhoto-url
 RUN cp /chhoto-url/target/$target/release/chhoto-url /chhoto-url/release
 
-FROM scratch
-COPY --from=builder /chhoto-url/release /chhoto-url
-COPY ./resources /resources
-ENTRYPOINT ["/chhoto-url"]
+FROM alpine AS tmp
+RUN mkdir /db
+
+FROM gcr.io/distroless/cc-debian12:nonroot
+COPY --chown=nonroot:nonroot --from=tmp /db /db
+COPY --chown=nonroot:nonroot --from=builder /chhoto-url/release /app/chhoto-url
+COPY --chown=nonroot:nonroot ./resources /app/resources
+WORKDIR /app
+
+USER nonroot
+
+VOLUME ["/db"]
+ENV TZ=Asia/Ho_Chi_Minh
+
+CMD ["/app/chhoto-url"]
