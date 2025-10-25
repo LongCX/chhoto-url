@@ -14,13 +14,19 @@ use argon2::{password_hash::PasswordHash, Argon2, PasswordVerifier};
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use std::env;
-
+use openidconnect::{Nonce, PkceCodeVerifier};
 use crate::AppState;
 use crate::{auth, database};
 use crate::{auth::validate, utils};
+use crate::openid::{exchange_code, generate_auth_url, initialize_openid, CallbackRequest};
 
 // Store the version number
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[derive(Serialize)]
+struct AuthUrlResponse {
+    auth_url: String,
+}
 
 // Define JSON struct for returning success/error data
 #[derive(Serialize)]
@@ -378,6 +384,90 @@ pub async fn login(req: String, session: Session, data: web::Data<AppState>) -> 
 
         info!("Successful login.");
         HttpResponse::Ok().body("Correct password!")
+    }
+}
+
+#[get("/api/openid/login")]
+async fn get_openid_login_url(
+    data: web::Data<AppState>,
+    session: Session,
+) -> impl Responder {
+    let config = &data.config;
+    let openid_client = initialize_openid(config)
+        .await
+        .expect("Failed to initialize OpenID Connect client");
+    match generate_auth_url(&openid_client) {
+        (auth_url, verifier, nonce, _) => {
+            // Lưu verifier và nonce vào session tạm thời (OPENID_TEMP)
+            session.insert("openid_verifier", &verifier).expect("Error inserting temp oidc auth token.");
+            session.insert("openid_nonce", &nonce).expect("Error inserting temp oidc auth token.");
+            HttpResponse::Ok().json(AuthUrlResponse {
+                auth_url,
+            })
+        }
+    }
+}
+
+#[post("/api/openid/callback")]
+async fn openid_callback(
+    data: web::Data<AppState>,
+    session: Session,
+    body: web::Json<CallbackRequest>,
+) -> impl Responder {
+    let config = &data.config;
+    let openid_client = initialize_openid(config)
+        .await
+        .expect("Failed to initialize OpenID Connect client");
+    let verifier = match session.get::<String>("openid_verifier") {
+        Ok(Some(v)) => v,
+        _ => return HttpResponse::Unauthorized().json(Response {
+            success: false,
+            error: true,
+            reason: "Authentication failed!".to_string(),
+        })
+    };
+    let nonce_str = match session.get::<String>("openid_nonce") {
+        Ok(Some(n)) => n,
+        _ => return HttpResponse::Unauthorized().json(Response {
+            success: false,
+            error: true,
+            reason: "Authentication failed!".to_string(),
+        })
+    };
+
+    let pkce_verifier = PkceCodeVerifier::new(verifier);
+    let nonce = Nonce::new(nonce_str);
+
+    match exchange_code(
+        &openid_client,
+        body.code.clone(),
+        pkce_verifier,
+        nonce
+    )
+        .await
+    {
+        Ok(_) => {
+            session
+                .insert("chhoto-url-auth", auth::gen_token())
+                .expect("Error inserting auth token.");
+
+            // Xóa temp verify data
+            session.remove("openid_verifier");
+            session.remove("openid_nonce");
+
+            HttpResponse::Ok().json(Response {
+                success: true,
+                error: false,
+                reason: String::from("Authenticated successfully."),
+            })
+        }
+        Err(_) => {
+            HttpResponse::Unauthorized().json(Response {
+                success: false,
+                error: true,
+                reason: String::from("Authentication failed."),
+            })
+        },
     }
 }
 

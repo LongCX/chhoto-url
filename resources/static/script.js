@@ -92,7 +92,7 @@ const showVersion = () => {
 const showLogin = () => {
   document.getElementById("container").style.filter = "blur(2px)";
   document.getElementById("login-dialog").showModal();
-  document.getElementById("password").focus();
+  doLoginOidc().then( () => document.getElementById("message-login").innerHTML = "Has login SSO");
 };
 
 const refreshData = async () => {
@@ -630,40 +630,6 @@ const submitEdit = () => {
   }
 };
 
-const submitLogin = () => {
-  const password = document.getElementById("password");
-  fetch(prepSubdir("/api/login"), {
-    method: "POST",
-    cache: "no-cache",
-    body: password.value,
-  })
-    .then(async (res) => {
-      switch (res.status) {
-        case 200:
-          document.getElementById("container").style.filter = "blur(0px)";
-          document.getElementById("login-dialog").close();
-          password.value = "";
-          document.getElementById("wrong-pass").hidden = true;
-          ADMIN = true;
-          await getConfig();
-          await refreshData();
-          break;
-        case 401:
-          document.getElementById("wrong-pass").hidden = false;
-          password.focus();
-          break;
-        default:
-          throw new Error("Got status " + res.status);
-      }
-    })
-    .catch((err) => {
-      console.log("Error:", err);
-      if (!alert("Something went wrong! Click Ok to refresh page.")) {
-        window.location.reload();
-      }
-    });
-};
-
 const logOut = async () => {
   if (confirm("Are you sure you want to log out?")) {
     await fetch(prepSubdir("/api/logout"), {
@@ -694,6 +660,58 @@ const logOut = async () => {
       });
   }
 };
+
+const getAuthUrl = async () => {
+  const res = await fetch('/api/openid/login');
+  return (await res.json()).auth_url;
+}
+
+const handleCallback = async (code) => {
+  const res = await fetch('/api/openid/callback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code })
+  });
+  return res.ok;
+}
+
+const doLoginOidc = async () => {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const pathname = window.location.pathname;
+
+  // Nếu là callback từ OIDC provider
+  if (code) {
+    // app.innerHTML = '<p>Processing login...</p>';
+    const result = await handleCallback(code);
+    if (result.success) {
+      window.location.href = '/';
+      document.getElementById("container").style.filter = "blur(0px)";
+      document.getElementById("login-dialog").close();
+      ADMIN = true;
+      await getConfig();
+      await refreshData();
+    } else {
+      window.location.href = '/?error=auth_failed';
+    }
+    return;
+  }
+  // Kiểm tra xác thực
+  const isAuth = ADMIN;
+  // Nếu chưa xác thực - redirect đến OIDC login
+  if (!isAuth && pathname === '/') {
+    // app.innerHTML = '<p>Redirecting to login...</p>';
+    const authUrl = await getAuthUrl();
+    window.location.href = authUrl;
+    return;
+  }
+
+  // Nếu chưa xác thực và không phải callback - redirect
+  if (!isAuth) {
+    window.location.href = '/';
+    return;
+  }
+}
 
 // This is where loading starts
 refreshData()
@@ -731,20 +749,6 @@ refreshData()
       editDialog.close();
     };
 
-    const passEye = document.getElementById("password-eye-button");
-    passEye.innerHTML = SVG_OPEN_EYE;
-    passEye.onclick = () => {
-      const passBox = document.getElementById("password");
-      if (passBox.type === "password") {
-        passBox.type = "text";
-        passEye.innerHTML = SVG_CLOSED_EYE;
-      } else {
-        passBox.type = "password";
-        passEye.innerHTML = SVG_OPEN_EYE;
-      }
-      document.getElementById("password").focus();
-    };
-
     const prevPageBtn = document.getElementById("prevPageBtn");
     prevPageBtn.innerHTML = SVG_PREV_BUTTON;
     prevPageBtn.onclick = () => {
@@ -763,11 +767,6 @@ refreshData()
     qrCodeDialog.onclose = () => {
       document.getElementById("container").style.filter = "blur(0px)";
       document.getElementById("qr-code").innerHTML = "";
-    };
-
-    document.forms.namedItem("login-form").onsubmit = (e) => {
-      e.preventDefault();
-      submitLogin();
     };
   })
   .catch((err) => {

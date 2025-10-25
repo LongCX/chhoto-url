@@ -20,6 +20,7 @@ mod config;
 mod database;
 mod services;
 mod utils;
+mod openid;
 
 // Tests
 #[cfg(test)]
@@ -102,6 +103,7 @@ async fn main() -> Result<()> {
     });
 
     let conf_clone = conf.clone();
+
     // Actually start the server
     HttpServer::new(move || {
         let mut app = App::new()
@@ -137,7 +139,9 @@ async fn main() -> Result<()> {
             .service(services::login)
             .service(services::logout)
             .service(services::expand)
-            .service(services::whoami);
+            .service(services::whoami)
+            .service(services::get_openid_login_url)
+            .service(services::openid_callback);
 
         if !conf.disable_frontend {
             if let Some(dir) = &conf.custom_landing_directory {

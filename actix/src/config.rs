@@ -29,6 +29,9 @@ pub struct Config {
     pub custom_landing_directory: Option<String>,
     pub use_wal_mode: bool,
     pub ensure_acid: bool,
+    pub oidc_issuer_url: Option<String>,
+    pub oidc_client_id: Option<String>,
+    pub oidc_redirect_uri: Option<String>,
 }
 
 pub fn read() -> Config {
@@ -195,6 +198,19 @@ pub fn read() -> Config {
             info!("The dashboard will be available at /admin/manage/");
         });
 
+    let oidc_client_id = var("oidc_client_id").ok().filter(|s| !s.trim().is_empty());
+    if oidc_client_id.is_none() {
+        warn!("No oidc_client_id was provided.")
+    };
+    let oidc_redirect_uri = var("oidc_redirect_uri").ok().filter(|s| !s.trim().is_empty());
+    if oidc_redirect_uri.is_none() {
+        warn!("No oidc_redirect_uri was provided.")
+    };
+    let oidc_issuer_url = var("oidc_issuer_url").ok().filter(|s| !s.trim().is_empty());
+    if oidc_issuer_url.is_none() {
+        warn!("No oidc_issuer_url was provided.")
+    };
+
     Config {
         listen_address,
         port,
@@ -215,5 +231,8 @@ pub fn read() -> Config {
         custom_landing_directory,
         use_wal_mode,
         ensure_acid,
+        oidc_client_id,
+        oidc_redirect_uri,
+        oidc_issuer_url,
     }
 }

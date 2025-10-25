@@ -64,6 +64,9 @@ fn default_config(test: &str) -> config::Config {
     custom_landing_directory: None,
     use_wal_mode: true,
     ensure_acid: false,
+    oidc_issuer_url: None,
+    oidc_client_id: None,
+    oidc_redirect_uri: None,
     };
     conf
 }
