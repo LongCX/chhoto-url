@@ -1,5 +1,5 @@
 use crate::config::Config;
-use openidconnect::{core::{CoreClient, CoreProviderMetadata, CoreResponseType}, reqwest::async_http_client, AuthenticationFlow, AuthorizationCode, ClientId, CsrfToken, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl};
+use openidconnect::{core::{CoreClient, CoreProviderMetadata, CoreResponseType}, reqwest::async_http_client, AuthenticationFlow, AuthorizationCode, ClientId, CsrfToken, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -39,6 +39,11 @@ pub fn generate_auth_url(
             Nonce::new_random,
         )
         .set_pkce_challenge(pkce_challenge)
+        .add_scopes(vec![
+            Scope::new("openid".to_string()),
+            Scope::new("profile".to_string()),
+            Scope::new("email".to_string()),
+        ])
         .url();
 
     (

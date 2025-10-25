@@ -92,7 +92,7 @@ const showVersion = () => {
 const showLogin = () => {
   document.getElementById("container").style.filter = "blur(2px)";
   document.getElementById("login-dialog").showModal();
-  doLoginOidc().then( () => document.getElementById("message-login").innerHTML = "Has login SSO");
+  doLoginOidc().then( );
 };
 
 const refreshData = async () => {
@@ -672,7 +672,7 @@ const handleCallback = async (code) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code })
   });
-  return res.ok;
+  return res.json();
 }
 
 const doLoginOidc = async () => {
@@ -682,7 +682,6 @@ const doLoginOidc = async () => {
 
   // Nếu là callback từ OIDC provider
   if (code) {
-    // app.innerHTML = '<p>Processing login...</p>';
     const result = await handleCallback(code);
     if (result.success) {
       window.location.href = '/';
@@ -691,8 +690,9 @@ const doLoginOidc = async () => {
       ADMIN = true;
       await getConfig();
       await refreshData();
+      document.getElementById("message-login").innerHTML = ""
     } else {
-      window.location.href = '/?error=auth_failed';
+      document.getElementById("message-login").innerHTML = "Login failed"
     }
     return;
   }
@@ -700,7 +700,6 @@ const doLoginOidc = async () => {
   const isAuth = ADMIN;
   // Nếu chưa xác thực - redirect đến OIDC login
   if (!isAuth && pathname === '/') {
-    // app.innerHTML = '<p>Redirecting to login...</p>';
     const authUrl = await getAuthUrl();
     window.location.href = authUrl;
     return;
@@ -708,7 +707,6 @@ const doLoginOidc = async () => {
 
   // Nếu chưa xác thực và không phải callback - redirect
   if (!isAuth) {
-    window.location.href = '/';
     return;
   }
 }
