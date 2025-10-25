@@ -61,9 +61,9 @@ pub fn api_header(req: &HttpRequest) -> Option<&str> {
 // Validate a session
 pub fn validate(session: Session, config: &Config) -> bool {
     // If there's no password provided, just return true
-    if config.password.is_none() {
-        return true;
-    }
+    //if config.password.is_none() {
+    //    return true;
+    //}
 
     if let Ok(token) = session.get::<String>("chhoto-url-auth") {
         check(token.as_deref())
