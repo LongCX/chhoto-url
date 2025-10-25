@@ -89,12 +89,6 @@ const showVersion = () => {
   }
 };
 
-const showLogin = () => {
-  document.getElementById("container").style.filter = "blur(2px)";
-  document.getElementById("login-dialog").showModal();
-  doLoginOidc().then( );
-};
-
 const refreshData = async () => {
   try {
     const loading_text = document.getElementById("loading-text");
@@ -105,7 +99,7 @@ const refreshData = async () => {
         const role = await res.text();
         switch (role) {
           case "nobody":
-            showLogin();
+            doLoginOidc();
             break;
           case "public":
             await getConfig();
@@ -644,7 +638,12 @@ const logOut = async () => {
           ADMIN = false;
           VERSION = null;
           LOCAL_DATA = [];
-          await refreshData();
+          if (confirm('Do you want to login again?')) {
+            await refreshData();
+          } else {
+            return;
+          }
+
         } else {
           showAlert(
             `Logout failed. Please try again!`,
@@ -676,6 +675,7 @@ const handleCallback = async (code) => {
 }
 
 const doLoginOidc = async () => {
+  document.getElementById("container").style.filter = "blur(2px)";
   const params = new URLSearchParams(window.location.search);
   const code = params.get('code');
   const pathname = window.location.pathname;
@@ -692,6 +692,7 @@ const doLoginOidc = async () => {
       await refreshData();
       document.getElementById("message-login").innerHTML = ""
     } else {
+      document.getElementById("login-dialog").showModal();
       document.getElementById("message-login").innerHTML = "Login failed"
     }
     return;
@@ -731,7 +732,7 @@ refreshData()
       if (ADMIN) {
         logOut();
       } else {
-        showLogin();
+        doLoginOidc();
       }
     };
 

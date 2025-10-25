@@ -136,7 +136,6 @@ async fn main() -> Result<()> {
             .service(services::getconfig)
             .service(services::add_link)
             .service(services::delete_link)
-            .service(services::login)
             .service(services::logout)
             .service(services::expand)
             .service(services::whoami)

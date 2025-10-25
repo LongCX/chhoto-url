@@ -10,8 +10,7 @@ use actix_web::{
     web::{self, Redirect},
     Either, HttpRequest, HttpResponse, Responder,
 };
-use argon2::{password_hash::PasswordHash, Argon2, PasswordVerifier};
-use log::{debug, info, warn};
+use log::{info};
 use serde::{Deserialize, Serialize};
 use std::env;
 use openidconnect::{Nonce, PkceCodeVerifier};
@@ -124,7 +123,7 @@ pub async fn add_link(
         HttpResponse::Unauthorized().json(result)
     // If password authentication or public mode is used - keeps backwards compatibility
     } else {
-        let (success, reply, _) = if auth::validate(session, config) {
+        let (success, reply, _) = if auth::validate(session) {
             utils::add_link(&req, &data.db, config, false)
         } else if config.public_mode {
             utils::add_link(&req, &data.db, config, true)
@@ -156,7 +155,7 @@ pub async fn getall(
     } else if result.error {
         HttpResponse::Unauthorized().json(result)
     // If password authentication is used - keeps backwards compatibility
-    } else if auth::validate(session, config) {
+    } else if auth::validate(session) {
         HttpResponse::Ok().body(utils::getall(&data.db, params.into_inner()))
     } else {
         HttpResponse::Unauthorized().body("Not logged in!")
@@ -202,7 +201,7 @@ pub async fn edit_link(
 ) -> HttpResponse {
     let config = &data.config;
     let result = utils::is_api_ok(http, config);
-    if result.success || validate(session, config) {
+    if result.success || validate(session) {
         if let Some((server_error, error_msg)) = utils::edit_link(&req, &data.db, config) {
             let body = Response {
                 success: false,
@@ -256,7 +255,7 @@ pub async fn whoami(
 ) -> HttpResponse {
     let config = &data.config;
     let result = utils::is_api_ok(http, config);
-    let acting_user = if result.success || validate(session, config) {
+    let acting_user = if result.success || validate(session) {
         "admin"
     } else if config.public_mode {
         "public"
@@ -275,7 +274,7 @@ pub async fn getconfig(
 ) -> HttpResponse {
     let config = &data.config;
     let result = utils::is_api_ok(http, config);
-    if result.success || validate(session, config) || data.config.public_mode {
+    if result.success || validate(session) || data.config.public_mode {
         let backend_config = BackendConfig {
             version: VERSION.to_string(),
             allow_capital_letters: config.allow_capital_letters,
@@ -321,69 +320,6 @@ pub async fn link_handler(
                 .customize()
                 .with_status(StatusCode::NOT_FOUND),
         )
-    }
-}
-
-// Handle login
-#[post("/api/login")]
-pub async fn login(req: String, session: Session, data: web::Data<AppState>) -> HttpResponse {
-    let config = &data.config;
-    // Check if password is hashed using Argon2. More algorithms maybe added later.
-    let authorized = if let Some(password) = &config.password {
-        if config.hash_algorithm.is_some() {
-            debug!("Using Argon2 hash for password validation.");
-            let hash = PasswordHash::new(password).expect("The provided password hash is invalid.");
-            Some(
-                Argon2::default()
-                    .verify_password(req.as_bytes(), &hash)
-                    .is_ok(),
-            )
-        } else {
-            // If hashing is not enabled, use the plaintext password for matching
-            Some(password == &req)
-        }
-    } else {
-        None
-    };
-    if config.api_key.is_some() {
-        if let Some(valid_pass) = authorized {
-            if !valid_pass {
-                warn!("Failed login attempt!");
-                let response = Response {
-                    success: false,
-                    error: true,
-                    reason: "Wrong password!".to_string(),
-                };
-                return HttpResponse::Unauthorized().json(response);
-            }
-        }
-        // Return Ok if no password was set on the server side
-        session
-            .insert("chhoto-url-auth", auth::gen_token())
-            .expect("Error inserting auth token.");
-
-        let response = Response {
-            success: true,
-            error: false,
-            reason: "Correct password!".to_string(),
-        };
-        info!("Successful login.");
-        HttpResponse::Ok().json(response)
-    } else {
-        // Keep this function backwards compatible
-        if let Some(valid_pass) = authorized {
-            if !valid_pass {
-                warn!("Failed login attempt!");
-                return HttpResponse::Unauthorized().body("Wrong password!");
-            }
-        }
-        // Return Ok if no password was set on the server side
-        session
-            .insert("chhoto-url-auth", auth::gen_token())
-            .expect("Error inserting auth token.");
-
-        info!("Successful login.");
-        HttpResponse::Ok().body("Correct password!")
     }
 }
 
@@ -514,7 +450,7 @@ pub async fn delete_link(
     } else if result.error {
         HttpResponse::Unauthorized().json(result)
     // If "pass" is true - keeps backwards compatibility
-    } else if auth::validate(session, config) {
+    } else if auth::validate(session) {
         if utils::delete_link(&shortlink, &data.db, data.config.allow_capital_letters) {
             HttpResponse::Ok().body(format!("Deleted {shortlink}"))
         } else {

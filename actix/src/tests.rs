@@ -54,7 +54,6 @@ fn default_config(test: &str) -> config::Config {
     public_mode: false,
     public_mode_expiry_delay: 0,
     use_temp_redirect: false,
-    password: Some(String::from("testpass")),
     hash_algorithm: None,
     api_key: Some(String::from("Z8FNjh2J2v3yfb0xPDIVA58Pj4D0e2jSERVdoqM5pJCbU2w5tmg3PNioD6GUhaQwHHaDLBNZj0EQE8MS4TLKcUyusa05")),
     slug_style: "Pair".to_string(),
@@ -64,9 +63,9 @@ fn default_config(test: &str) -> config::Config {
     custom_landing_directory: None,
     use_wal_mode: true,
     ensure_acid: false,
-    oidc_issuer_url: None,
-    oidc_client_id: None,
-    oidc_redirect_uri: None,
+    oidc_issuer_url: Some(String::from("https://mydomain.com")),
+    oidc_client_id: Some(String::from("abc")),
+    oidc_redirect_uri: Some(String::from("https://mydomain.com")),
     };
     conf
 }

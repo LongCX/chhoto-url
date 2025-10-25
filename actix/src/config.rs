@@ -19,7 +19,6 @@ pub struct Config {
     pub public_mode: bool,
     pub public_mode_expiry_delay: i64,
     pub use_temp_redirect: bool,
-    pub password: Option<String>,
     pub hash_algorithm: Option<String>,
     pub api_key: Option<String>,
     pub slug_style: String,
@@ -98,11 +97,6 @@ pub fn read() -> Config {
     } else {
         info!("Using Permanent redirection (default).")
     }
-
-    let password = var("password").ok().filter(|s| !s.trim().is_empty());
-    if password.is_none() {
-        warn!("No password was provided. The API will be accessible to the public.")
-    };
 
     let hash_algorithm = var("hash_algorithm")
         .ok()
@@ -221,7 +215,6 @@ pub fn read() -> Config {
         public_mode,
         public_mode_expiry_delay,
         use_temp_redirect,
-        password,
         hash_algorithm,
         api_key,
         slug_style,
@@ -233,6 +226,6 @@ pub fn read() -> Config {
         ensure_acid,
         oidc_client_id,
         oidc_redirect_uri,
-        oidc_issuer_url,
+        oidc_issuer_url
     }
 }
