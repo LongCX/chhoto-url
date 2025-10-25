@@ -115,7 +115,7 @@ async fn main() -> Result<()> {
             .wrap(
                 SessionMiddleware::builder(CookieSessionStore::default(), secret_key.clone())
                     .cookie_same_site(actix_web::cookie::SameSite::Strict)
-                    .cookie_secure(false)
+                    .cookie_secure(true)
                     .build(),
             )
             // Maintain a single instance of database throughout
