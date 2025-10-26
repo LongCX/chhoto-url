@@ -11,7 +11,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
 ARG target=x86_64-unknown-linux-musl
-RUN apt-get update && apt-get install -y musl-tools
+RUN apt-get update && apt-get install -y musl-tools build-essential pkg-config libssl-dev ca-certificates
 RUN rustup target add $target
 
 COPY --from=planner /chhoto-url/recipe.json recipe.json
