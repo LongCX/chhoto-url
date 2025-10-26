@@ -4,7 +4,7 @@
 use log::{info, warn};
 use passwords::{analyzer::analyze, scorer::score};
 use std::env::var;
-
+use openidconnect::IssuerUrl;
 use crate::auth;
 
 // Struct for storing config read form env vars that might be accessed more than once
@@ -28,7 +28,7 @@ pub struct Config {
     pub custom_landing_directory: Option<String>,
     pub use_wal_mode: bool,
     pub ensure_acid: bool,
-    pub oidc_issuer_url: Option<String>,
+    pub oidc_issuer_url: Option<IssuerUrl>,
     pub oidc_client_id: Option<String>,
     pub oidc_redirect_uri: Option<String>,
 }
@@ -200,10 +200,20 @@ pub fn read() -> Config {
     if oidc_redirect_uri.is_none() {
         warn!("No oidc_redirect_uri was provided.")
     };
-    let oidc_issuer_url = var("oidc_issuer_url").ok().filter(|s| !s.trim().is_empty());
+    let oidc_issuer_url: Option<IssuerUrl> = var("oidc_issuer_url")
+        .ok()
+        .map(|s| s.trim().to_string()) // loại whitespace xung quanh
+        .filter(|s| !s.is_empty())
+        .and_then(|s| match IssuerUrl::new(s) {
+            Ok(url) => Some(url),
+            Err(e) => {
+                warn!("Invalid oidc_issuer_url: {e}");
+                None
+            }
+        });
     if oidc_issuer_url.is_none() {
-        warn!("No oidc_issuer_url was provided.")
-    };
+        warn!("No valid oidc_issuer_url was provided.");
+    }
 
     Config {
         listen_address,
@@ -226,6 +236,6 @@ pub fn read() -> Config {
         ensure_acid,
         oidc_client_id,
         oidc_redirect_uri,
-        oidc_issuer_url
+        oidc_issuer_url,
     }
 }

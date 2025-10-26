@@ -1,19 +1,36 @@
 use crate::config::Config;
-use openidconnect::{core::{CoreClient, CoreProviderMetadata, CoreResponseType}, reqwest::async_http_client, AuthenticationFlow, AuthorizationCode, ClientId, CsrfToken, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope};
+use openidconnect::{core::{CoreClient, CoreProviderMetadata, CoreResponseType}, AuthenticationFlow, AuthorizationCode, ClientId, CsrfToken, EndpointMaybeSet, EndpointNotSet, EndpointSet, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct CallbackRequest {
     pub code: String,
+    pub state: String,
+}
+
+fn get_http_client() -> reqwest::Client {
+    reqwest::ClientBuilder::new()
+        // Following redirects opens the client up to SSRF vulnerabilities.
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .expect("Something went wrong :(")
 }
 
 pub async fn initialize_openid(
     config: &Config,
-) -> Result<CoreClient, Box<dyn std::error::Error>> {
-    let issuer_url = IssuerUrl::new(config.oidc_issuer_url.clone().unwrap_or_default())?;
+) -> Result<CoreClient<
+    EndpointSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointNotSet,
+    EndpointMaybeSet,
+    EndpointMaybeSet,
+>, Box<dyn std::error::Error>> {
+    let issuer_url: IssuerUrl = config.oidc_issuer_url.clone().expect("Missing oidc_issuer_url");
+    let http_client = get_http_client();
 
     let provider_metadata =
-        CoreProviderMetadata::discover_async(issuer_url, async_http_client).await?;
+        CoreProviderMetadata::discover_async(issuer_url, &http_client).await?;
 
     let client = CoreClient::from_provider_metadata(
         provider_metadata,
@@ -26,8 +43,8 @@ pub async fn initialize_openid(
 }
 
 pub fn generate_auth_url(
-    client: &CoreClient,
-) -> (String, String, String, String) {
+    client: &CoreClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointMaybeSet, EndpointMaybeSet>,
+) -> (String, CsrfToken, Nonce, PkceCodeVerifier) {
     // Generate PKCE challenge
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
 
@@ -48,22 +65,23 @@ pub fn generate_auth_url(
 
     (
         auth_url.to_string(),
-        pkce_verifier.secret().to_string(),
-        nonce.secret().to_string(),
-        csrf_token.secret().to_string(),
+        csrf_token,
+        nonce,
+        pkce_verifier,
     )
 }
 
 pub async fn exchange_code(
-    client: &CoreClient,
+    client: &CoreClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointMaybeSet, EndpointMaybeSet>,
     code: String,
     pkce_verifier: PkceCodeVerifier,
     nonce: Nonce,
 ) -> Result<String, Box<dyn std::error::Error>> {
+    let http_client = get_http_client();
     let token_response = client
-        .exchange_code(AuthorizationCode::new(code))
+        .exchange_code(AuthorizationCode::new(code))?
         .set_pkce_verifier(pkce_verifier)
-        .request_async(async_http_client)
+        .request_async(&http_client)
         .await?;
 
     // Lấy ID token

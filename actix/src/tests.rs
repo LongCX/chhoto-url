@@ -4,7 +4,7 @@ use actix_web::{body::to_bytes, dev::ServiceResponse, test, web::Bytes, App, Err
 use regex::Regex;
 use serde::Deserialize;
 use std::{fmt::Display, fs, rc::Rc, thread::sleep, time::Duration};
-
+use openidconnect::IssuerUrl;
 use super::*;
 
 trait BodyTest {
@@ -63,7 +63,7 @@ fn default_config(test: &str) -> config::Config {
     custom_landing_directory: None,
     use_wal_mode: true,
     ensure_acid: false,
-    oidc_issuer_url: Some(String::from("https://mydomain.com")),
+    oidc_issuer_url: IssuerUrl::new("https://mydomain.com".to_string()).ok(),
     oidc_client_id: Some(String::from("abc")),
     oidc_redirect_uri: Some(String::from("https://mydomain.com")),
     };

@@ -665,11 +665,11 @@ const getAuthUrl = async () => {
   return (await res.json()).auth_url;
 }
 
-const handleCallback = async (code) => {
+const handleCallback = async (code, state) => {
   const res = await fetch('/api/openid/callback', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code })
+    body: JSON.stringify({ code, state })
   });
   return res.json();
 }
@@ -678,11 +678,12 @@ const doLoginOidc = async () => {
   document.getElementById("container").style.filter = "blur(2px)";
   const params = new URLSearchParams(window.location.search);
   const code = params.get('code');
+  const state = params.get('state');
   const pathname = window.location.pathname;
 
   // Nếu là callback từ OIDC provider
   if (code) {
-    const result = await handleCallback(code);
+    const result = await handleCallback(code, state);
     if (result.success) {
       window.location.href = '/';
       document.getElementById("container").style.filter = "blur(0px)";
