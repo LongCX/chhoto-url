@@ -682,7 +682,7 @@ const doLoginOidc = async () => {
   const pathname = window.location.pathname;
 
   // Nếu là callback từ OIDC provider
-  if (code) {
+  if (code && state) {
     const result = await handleCallback(code, state);
     if (result.success) {
       window.location.href = '/';
