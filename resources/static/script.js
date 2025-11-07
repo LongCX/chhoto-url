@@ -203,7 +203,7 @@ const gotoNextPage = () => {
 const updateInputBox = () => {
   if (CONFIG.allow_capital_letters) {
     const input_box = document.getElementById("shortUrl");
-    input_box.pattern = "[A-Za-z0-9\-_]+";
+    input_box.pattern = "[A-Za-z0-9\\\-_]+";
     input_box.title = "Only A-Z, a-z, 0-9, - and _ are allowed";
     input_box.placeholder = "Only A-Z, a-z, 0-9, - and _ are allowed";
   }
@@ -252,14 +252,14 @@ const managePageControls = () => {
 };
 
 const showAlert = (text, col) => {
-  document.getElementById("alert-box")?.remove();
-  const controls = document.getElementById("controls");
-  const alertBox = document.createElement("p");
-  alertBox.id = "alert-box";
-  alertBox.style.color = col;
+  const alertBox = document.getElementById("alert-box");
+  alertBox.style.background = col;
   alertBox.innerHTML = text;
-  alertBox.style.display = "block";
-  controls.appendChild(alertBox);
+  if (text == "&nbsp;") {
+    alertBox.removeAttribute("style");
+  } else {
+    alertBox.style.display = "block";
+  }
 };
 
 const refreshExpiryTimes = async () => {
@@ -269,7 +269,7 @@ const refreshExpiryTimes = async () => {
     let expiryTimeParsed = new Date(td.getAttribute("data-time") * 1000);
     let relativeTime = formatRelativeTime(expiryTimeParsed);
     if (relativeTime == "expired") {
-      td.style.color = "light-dark(red, #ff1a1a)";
+      td.style.color = "light-dark(red, #a01e1e)";
       for (const btn of td.parentElement.lastChild.querySelectorAll("button")) {
         btn.disabled = true;
       }
@@ -372,13 +372,13 @@ const copyShortUrl = async (short_link) => {
     await navigator.clipboard.writeText(full_link);
     showAlert(
       `Short URL ${link_elt} was copied to clipboard!`,
-      "light-dark(green, #72ff72)",
+      "light-dark(green, #1e501e)",
     );
   } catch (err) {
     console.log(err);
     showAlert(
       `Could not copy short URL to clipboard, please do it manually: ${link_elt}`,
-      "light-dark(red, #ff1a1a)",
+      "light-dark(red, #a01e1e)",
     );
   }
 };
@@ -485,7 +485,7 @@ const deleteButton = (shortUrl) => {
   btn.onclick = (e) => {
     e.preventDefault();
     if (confirm("Do you want to delete the entry " + shortUrl + "?")) {
-      showAlert("&nbsp;", "black");
+      showAlert("&nbsp;", "transparent");
       fetch(prepSubdir(`/api/del/${shortUrl}`), {
         method: "DELETE",
         cache: "no-cache",
@@ -508,7 +508,7 @@ const deleteButton = (shortUrl) => {
           console.log("Error:", err);
           showAlert(
             "Unable to delete " + shortUrl + ". Please try again!",
-            "light-dark(red, #ff1a1a)",
+            "light-dark(red, #a01e1e)",
           );
         });
     }
@@ -544,24 +544,24 @@ const submitForm = () => {
     })
     .then(async (text) => {
       if (!ok) {
-        showAlert(text, "light-dark(red, #ff1a1a)");
+        showAlert(text, "light-dark(red, #a01e1e)");
       } else {
         await copyShortUrl(text);
         longUrl.value = "";
         shortUrl.value = "";
         expiryDelay.value = 0;
+        const params = new URLSearchParams();
+        params.append("page_size", 1);
+        const newEntry = await pullData(params);
+        LOCAL_DATA.unshift(newEntry[0]);
+        if (LOCAL_DATA.length == (CUR_PAGE + 1) * 10 + 1) {
+          LOCAL_DATA.pop();
+        }
+        CUR_PAGE = 0;
+        PROCESSING_PAGE_TRANSITION = true;
+        displayData();
+        managePageControls();
       }
-      const params = new URLSearchParams();
-      params.append("page_size", 1);
-      const newEntry = await pullData(params);
-      LOCAL_DATA.unshift(newEntry[0]);
-      if (LOCAL_DATA.length == (CUR_PAGE + 1) * 10 + 1) {
-        LOCAL_DATA.pop();
-      }
-      CUR_PAGE = 0;
-      PROCESSING_PAGE_TRANSITION = true;
-      displayData();
-      managePageControls();
     })
     .catch((err) => {
       console.log("Error:", err);
@@ -600,7 +600,7 @@ const submitEdit = () => {
       })
       .then(async (text) => {
         if (!ok) {
-          showAlert(text, "light-dark(red, #ff1a1a)");
+          showAlert(text, "light-dark(red, #a01e1e)");
         } else {
           document.getElementById("edit-dialog").close();
           editUrlSpan.textContent = shortUrl;
@@ -634,7 +634,7 @@ const logOut = async () => {
         if (res.ok) {
           document.getElementById("version-number").hidden = true;
           document.getElementById("admin-button").hidden = true;
-          showAlert("&nbsp;", "black");
+          showAlert("&nbsp;", "transparent");
           ADMIN = false;
           VERSION = null;
           LOCAL_DATA = [];
@@ -647,7 +647,7 @@ const logOut = async () => {
         } else {
           showAlert(
             `Logout failed. Please try again!`,
-            "light-dark(red, #ff1a1a)",
+            "light-dark(red, #a01e1e)",
           );
         }
       })

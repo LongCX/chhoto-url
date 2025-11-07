@@ -98,7 +98,7 @@ async fn main() -> Result<()> {
         let mut interval = time::interval(time::Duration::from_secs(3600));
         loop {
             interval.tick().await;
-            database::cleanup(&db);
+            database::cleanup(&db, conf.use_wal_mode);
         }
     });
 

@@ -18,11 +18,14 @@ use crate::AppState;
 use crate::{auth, database};
 use crate::{auth::validate, utils};
 use crate::openid::{exchange_code, generate_auth_url, initialize_openid, CallbackRequest};
+use crate::{auth::is_session_valid, utils};
+use ChhotoError::{ClientError, ServerError};
 
 // Store the version number
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const SESSION_KEY_OIDC_STATE: &str = "oidc_state";
+
 #[derive(Serialize)]
 struct AuthUrlResponse {
     auth_url: String,
@@ -33,14 +36,18 @@ struct OidcState {
     state: CsrfToken,
     nonce: Nonce,
     pkce_verifier: PkceCodeVerifier,
+// Error types
+pub enum ChhotoError {
+    ServerError,
+    ClientError { reason: String },
 }
 
 // Define JSON struct for returning success/error data
 #[derive(Serialize)]
-struct Response {
-    success: bool,
-    error: bool,
-    reason: String,
+pub struct JSONResponse {
+    pub success: bool,
+    pub error: bool,
+    pub reason: String,
 }
 
 // Define JSON struct for returning backend config
@@ -95,53 +102,64 @@ pub async fn add_link(
 ) -> HttpResponse {
     let config = &data.config;
     // Call is_api_ok() function, pass HttpRequest
-    let result = utils::is_api_ok(http, config);
+    let result = auth::is_api_ok(http, config);
     // If success, add new link
     if result.success {
-        let (success, reply, expiry_time) = utils::add_link(&req, &data.db, config, false);
-        if success {
-            let site_url = config.site_url.clone();
-            let shorturl = if let Some(url) = site_url {
-                format!("{url}/{reply}")
-            } else {
-                let protocol = if config.port == 443 { "https" } else { "http" };
-                let port_text = if [80, 443].contains(&config.port) {
-                    String::new()
+        match utils::add_link(&req, &data.db, config, false) {
+            Ok((shorturl, expiry_time)) => {
+                let site_url = config.site_url.clone();
+                let shorturl = if let Some(url) = site_url {
+                    format!("{url}/{shorturl}")
                 } else {
-                    format!(":{}", config.port)
+                    let protocol = if config.port == 443 { "https" } else { "http" };
+                    let port_text = if [80, 443].contains(&config.port) {
+                        String::new()
+                    } else {
+                        format!(":{}", config.port)
+                    };
+                    format!("{protocol}://localhost{port_text}/{shorturl}")
                 };
-                format!("{protocol}://localhost{port_text}/{reply}")
-            };
-            let response = CreatedURL {
-                success: true,
-                error: false,
-                shorturl,
-                expiry_time,
-            };
-            HttpResponse::Created().json(response)
-        } else {
-            let response = Response {
-                success: false,
-                error: true,
-                reason: reply,
-            };
-            HttpResponse::Conflict().json(response)
+                let response = CreatedURL {
+                    success: true,
+                    error: false,
+                    shorturl,
+                    expiry_time,
+                };
+                HttpResponse::Created().json(response)
+            }
+            Err(ServerError) => {
+                let response = JSONResponse {
+                    success: false,
+                    error: true,
+                    reason: "Something went wrong when adding the link.".to_string(),
+                };
+                HttpResponse::InternalServerError().json(response)
+            }
+            Err(ClientError { reason }) => {
+                let response = JSONResponse {
+                    success: false,
+                    error: true,
+                    reason,
+                };
+                HttpResponse::Conflict().json(response)
+            }
         }
     } else if result.error {
         HttpResponse::Unauthorized().json(result)
     // If password authentication or public mode is used - keeps backwards compatibility
     } else {
-        let (success, reply, _) = if auth::validate(session) {
+        let result = if auth::is_session_valid(session, config) {
             utils::add_link(&req, &data.db, config, false)
         } else if config.public_mode {
             utils::add_link(&req, &data.db, config, true)
         } else {
             return HttpResponse::Unauthorized().body("Not logged in!");
         };
-        if success {
-            HttpResponse::Created().body(reply)
-        } else {
-            HttpResponse::Conflict().body(reply)
+        match result {
+            Ok((shorturl, _)) => HttpResponse::Created().body(shorturl),
+            Err(ServerError) => HttpResponse::InternalServerError()
+                .body("Something went wrong when adding the link.".to_string()),
+            Err(ClientError { reason }) => HttpResponse::Conflict().body(reason),
         }
     }
 }
@@ -156,14 +174,14 @@ pub async fn getall(
 ) -> HttpResponse {
     let config = &data.config;
     // Call is_api_ok() function, pass HttpRequest
-    let result = utils::is_api_ok(http, config);
+    let result = auth::is_api_ok(http, config);
     // If success, return all links
     if result.success {
         HttpResponse::Ok().body(utils::getall(&data.db, params.into_inner()))
     } else if result.error {
         HttpResponse::Unauthorized().json(result)
     // If password authentication is used - keeps backwards compatibility
-    } else if auth::validate(session) {
+    } else if auth::is_session_valid(session, config) {
         HttpResponse::Ok().body(utils::getall(&data.db, params.into_inner()))
     } else {
         HttpResponse::Unauthorized().body("Not logged in!")
@@ -173,26 +191,35 @@ pub async fn getall(
 // Get information about a single shortlink
 #[post("/api/expand")]
 pub async fn expand(req: String, data: web::Data<AppState>, http: HttpRequest) -> HttpResponse {
-    let result = utils::is_api_ok(http, &data.config);
+    let result = auth::is_api_ok(http, &data.config);
     if result.success {
-        let (longurl, hits, expiry_time) = database::find_url(&req, &data.db);
-        if let Some(longlink) = longurl {
-            let body = LinkInfo {
-                success: true,
-                error: false,
-                longurl: longlink,
-                hits: hits.expect("Error getting hit count for existing shortlink."),
-                expiry_time: expiry_time
-                    .expect("Error getting expiry time for existing shortlink."),
-            };
-            HttpResponse::Ok().json(body)
-        } else {
-            let body = Response {
-                success: false,
-                error: true,
-                reason: "The shortlink does not exist on the server.".to_string(),
-            };
-            HttpResponse::BadRequest().json(body)
+        match database::find_url(&req, &data.db) {
+            Ok((longurl, hits, expiry_time)) => {
+                let body = LinkInfo {
+                    success: true,
+                    error: false,
+                    longurl,
+                    hits,
+                    expiry_time,
+                };
+                HttpResponse::Ok().json(body)
+            }
+            Err(ServerError) => {
+                let body = JSONResponse {
+                    success: false,
+                    error: true,
+                    reason: "Something went wrong when finding the link.".to_string(),
+                };
+                HttpResponse::BadRequest().json(body)
+            }
+            Err(ClientError { reason }) => {
+                let body = JSONResponse {
+                    success: false,
+                    error: true,
+                    reason,
+                };
+                HttpResponse::BadRequest().json(body)
+            }
         }
     } else {
         HttpResponse::Unauthorized().json(result)
@@ -208,26 +235,33 @@ pub async fn edit_link(
     http: HttpRequest,
 ) -> HttpResponse {
     let config = &data.config;
-    let result = utils::is_api_ok(http, config);
-    if result.success || validate(session) {
-        if let Some((server_error, error_msg)) = utils::edit_link(&req, &data.db, config) {
-            let body = Response {
-                success: false,
-                error: true,
-                reason: error_msg,
-            };
-            if server_error {
+    let result = auth::is_api_ok(http, config);
+    if result.success || is_session_valid(session, config) {
+        match utils::edit_link(&req, &data.db, config) {
+            Ok(()) => {
+                let body = JSONResponse {
+                    success: true,
+                    error: false,
+                    reason: String::from("Edit was successful."),
+                };
+                HttpResponse::Created().json(body)
+            }
+            Err(ServerError) => {
+                let body = JSONResponse {
+                    success: false,
+                    error: true,
+                    reason: "Something went wrong when editing the link.".to_string(),
+                };
                 HttpResponse::InternalServerError().json(body)
-            } else {
+            }
+            Err(ClientError { reason }) => {
+                let body = JSONResponse {
+                    success: false,
+                    error: true,
+                    reason,
+                };
                 HttpResponse::BadRequest().json(body)
             }
-        } else {
-            let body = Response {
-                success: true,
-                error: false,
-                reason: String::from("Edit was successful."),
-            };
-            HttpResponse::Created().json(body)
         }
     } else {
         HttpResponse::Unauthorized().json(result)
@@ -262,8 +296,8 @@ pub async fn whoami(
     http: HttpRequest,
 ) -> HttpResponse {
     let config = &data.config;
-    let result = utils::is_api_ok(http, config);
-    let acting_user = if result.success || validate(session) {
+    let result = auth::is_api_ok(http, config);
+    let acting_user = if result.success || is_session_valid(session, config) {
         "admin"
     } else if config.public_mode {
         "public"
@@ -281,8 +315,8 @@ pub async fn getconfig(
     http: HttpRequest,
 ) -> HttpResponse {
     let config = &data.config;
-    let result = utils::is_api_ok(http, config);
-    if result.success || validate(session) || data.config.public_mode {
+    let result = auth::is_api_ok(http, config);
+    if result.success || is_session_valid(session, config) || data.config.public_mode {
         let backend_config = BackendConfig {
             version: VERSION.to_string(),
             allow_capital_letters: config.allow_capital_letters,
@@ -314,7 +348,7 @@ pub async fn link_handler(
     data: web::Data<AppState>,
 ) -> impl Responder {
     let shortlink_str = shortlink.as_str();
-    if let Some(longlink) = database::find_and_add_hit(shortlink_str, &data.db) {
+    if let Ok(longlink) = database::find_and_add_hit(shortlink_str, &data.db) {
         if data.config.use_temp_redirect {
             Either::Left(Redirect::to(longlink))
         } else {
@@ -432,29 +466,40 @@ pub async fn delete_link(
 ) -> HttpResponse {
     let config = &data.config;
     // Call is_api_ok() function, pass HttpRequest
-    let result = utils::is_api_ok(http, config);
+    let result = auth::is_api_ok(http, config);
     // If success, delete shortlink
     if result.success {
-        if utils::delete_link(&shortlink, &data.db, data.config.allow_capital_letters) {
-            let response = Response {
-                success: true,
-                error: false,
-                reason: format!("Deleted {shortlink}"),
-            };
-            HttpResponse::Ok().json(response)
-        } else {
-            let response = Response {
-                success: false,
-                error: true,
-                reason: "The short link was not found, and could not be deleted.".to_string(),
-            };
-            HttpResponse::NotFound().json(response)
+        match utils::delete_link(&shortlink, &data.db, data.config.allow_capital_letters) {
+            Ok(()) => {
+                let response = JSONResponse {
+                    success: true,
+                    error: false,
+                    reason: format!("Deleted {shortlink}"),
+                };
+                HttpResponse::Ok().json(response)
+            }
+            Err(ServerError) => {
+                let response = JSONResponse {
+                    success: false,
+                    error: true,
+                    reason: "Something went wrong when deleting the link.".to_string(),
+                };
+                HttpResponse::InternalServerError().json(response)
+            }
+            Err(ClientError { reason }) => {
+                let response = JSONResponse {
+                    success: false,
+                    error: true,
+                    reason,
+                };
+                HttpResponse::NotFound().json(response)
+            }
         }
     } else if result.error {
         HttpResponse::Unauthorized().json(result)
-    // If "pass" is true - keeps backwards compatibility
-    } else if auth::validate(session) {
-        if utils::delete_link(&shortlink, &data.db, data.config.allow_capital_letters) {
+    // If using password - keeps backwards compatibility
+    } else if auth::is_session_valid(session, config) {
+        if utils::delete_link(&shortlink, &data.db, data.config.allow_capital_letters).is_ok() {
             HttpResponse::Ok().body(format!("Deleted {shortlink}"))
         } else {
             HttpResponse::NotFound().body("Not found!")
