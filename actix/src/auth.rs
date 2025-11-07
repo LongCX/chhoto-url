@@ -107,7 +107,7 @@ pub fn get_api_header(req: &HttpRequest) -> Option<&str> {
 }
 
 // Validate a session
-pub fn is_session_valid(session: Session, config: &Config) -> bool {
+pub fn is_session_valid(session: Session) -> bool {
     if let Ok(token) = session.get::<String>("chhoto-url-auth") {
         is_token_valid(token.as_deref())
     } else {

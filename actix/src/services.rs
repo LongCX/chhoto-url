@@ -16,9 +16,8 @@ use std::env;
 use openidconnect::{CsrfToken, Nonce, PkceCodeVerifier};
 use crate::AppState;
 use crate::{auth, database};
-use crate::{auth::validate, utils};
-use crate::openid::{exchange_code, generate_auth_url, initialize_openid, CallbackRequest};
 use crate::{auth::is_session_valid, utils};
+use crate::openid::{exchange_code, generate_auth_url, initialize_openid, CallbackRequest};
 use ChhotoError::{ClientError, ServerError};
 
 // Store the version number
@@ -36,6 +35,8 @@ struct OidcState {
     state: CsrfToken,
     nonce: Nonce,
     pkce_verifier: PkceCodeVerifier,
+}
+
 // Error types
 pub enum ChhotoError {
     ServerError,
@@ -148,7 +149,7 @@ pub async fn add_link(
         HttpResponse::Unauthorized().json(result)
     // If password authentication or public mode is used - keeps backwards compatibility
     } else {
-        let result = if auth::is_session_valid(session, config) {
+        let result = if auth::is_session_valid(session) {
             utils::add_link(&req, &data.db, config, false)
         } else if config.public_mode {
             utils::add_link(&req, &data.db, config, true)
@@ -181,7 +182,7 @@ pub async fn getall(
     } else if result.error {
         HttpResponse::Unauthorized().json(result)
     // If password authentication is used - keeps backwards compatibility
-    } else if auth::is_session_valid(session, config) {
+    } else if auth::is_session_valid(session) {
         HttpResponse::Ok().body(utils::getall(&data.db, params.into_inner()))
     } else {
         HttpResponse::Unauthorized().body("Not logged in!")
@@ -236,7 +237,7 @@ pub async fn edit_link(
 ) -> HttpResponse {
     let config = &data.config;
     let result = auth::is_api_ok(http, config);
-    if result.success || is_session_valid(session, config) {
+    if result.success || is_session_valid(session) {
         match utils::edit_link(&req, &data.db, config) {
             Ok(()) => {
                 let body = JSONResponse {
@@ -297,7 +298,7 @@ pub async fn whoami(
 ) -> HttpResponse {
     let config = &data.config;
     let result = auth::is_api_ok(http, config);
-    let acting_user = if result.success || is_session_valid(session, config) {
+    let acting_user = if result.success || is_session_valid(session) {
         "admin"
     } else if config.public_mode {
         "public"
@@ -316,7 +317,7 @@ pub async fn getconfig(
 ) -> HttpResponse {
     let config = &data.config;
     let result = auth::is_api_ok(http, config);
-    if result.success || is_session_valid(session, config) || data.config.public_mode {
+    if result.success || is_session_valid(session) || data.config.public_mode {
         let backend_config = BackendConfig {
             version: VERSION.to_string(),
             allow_capital_letters: config.allow_capital_letters,
@@ -408,7 +409,7 @@ async fn openid_callback(
         .remove_as::<OidcState>(SESSION_KEY_OIDC_STATE).unwrap().unwrap();
 
     if oidc_state.state.secret() != &body.state {
-        return HttpResponse::Unauthorized().json(Response {
+        return HttpResponse::Unauthorized().json(JSONResponse {
             success: false,
             error: true,
             reason: "Authentication failed!".to_string(),
@@ -428,14 +429,14 @@ async fn openid_callback(
                 .insert("chhoto-url-auth", auth::gen_token())
                 .expect("Error inserting auth token.");
 
-            HttpResponse::Ok().json(Response {
+            HttpResponse::Ok().json(JSONResponse {
                 success: true,
                 error: false,
                 reason: String::from("Authenticated successfully."),
             })
         }
         Err(_) => {
-            HttpResponse::Unauthorized().json(Response {
+            HttpResponse::Unauthorized().json(JSONResponse {
                 success: false,
                 error: true,
                 reason: String::from("Authentication failed."),
@@ -498,7 +499,7 @@ pub async fn delete_link(
     } else if result.error {
         HttpResponse::Unauthorized().json(result)
     // If using password - keeps backwards compatibility
-    } else if auth::is_session_valid(session, config) {
+    } else if auth::is_session_valid(session) {
         if utils::delete_link(&shortlink, &data.db, data.config.allow_capital_letters).is_ok() {
             HttpResponse::Ok().body(format!("Deleted {shortlink}"))
         } else {
