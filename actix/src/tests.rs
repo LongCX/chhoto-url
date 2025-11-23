@@ -66,6 +66,7 @@ fn default_config(test: &str) -> config::Config {
     oidc_issuer_url: IssuerUrl::new("https://mydomain.com".to_string()).ok(),
     oidc_client_id: Some(String::from("abc")),
     oidc_redirect_uri: Some(String::from("https://mydomain.com")),
+    redis_url: None,
     };
     conf
 }

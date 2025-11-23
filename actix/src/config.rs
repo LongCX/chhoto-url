@@ -31,6 +31,7 @@ pub struct Config {
     pub oidc_issuer_url: Option<IssuerUrl>,
     pub oidc_client_id: Option<String>,
     pub oidc_redirect_uri: Option<String>,
+    pub redis_url: Option<String>,
 }
 
 pub fn read() -> Config {
@@ -214,7 +215,10 @@ pub fn read() -> Config {
     if oidc_issuer_url.is_none() {
         warn!("No valid oidc_issuer_url was provided.");
     }
-
+    let redis_url = var("redis_url").ok().filter(|s| !s.trim().is_empty());
+    if redis_url.is_none() {
+        warn!("No redis_url was provided.")
+    };
     Config {
         listen_address,
         port,
@@ -237,5 +241,6 @@ pub fn read() -> Config {
         oidc_client_id,
         oidc_redirect_uri,
         oidc_issuer_url,
+        redis_url,
     }
 }

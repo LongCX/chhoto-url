@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 use actix_files::Files;
-use actix_session::{storage::CookieSessionStore, SessionMiddleware};
+use actix_session::{storage::RedisSessionStore, SessionMiddleware};
 use actix_web::{
     cookie::Key,
     middleware,
@@ -103,6 +103,9 @@ async fn main() -> Result<()> {
     });
 
     let conf_clone = conf.clone();
+    let store = RedisSessionStore::new(conf.redis_url.as_ref().expect("Redis URL not set"))
+        .await
+        .expect("Failed to connect to Redis");
 
     // Actually start the server
     HttpServer::new(move || {
@@ -113,9 +116,11 @@ async fn main() -> Result<()> {
                 middleware::TrailingSlash::MergeOnly,
             ))
             .wrap(
-                SessionMiddleware::builder(CookieSessionStore::default(), secret_key.clone())
+                SessionMiddleware::builder(store.clone(), secret_key.clone())
                     .cookie_same_site(actix_web::cookie::SameSite::Strict)
                     .cookie_secure(true)
+                    .cookie_http_only(true)
+                    .cookie_name("chhotourl-session".to_string())
                     .build(),
             )
             // Maintain a single instance of database throughout

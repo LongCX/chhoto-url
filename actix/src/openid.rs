@@ -76,7 +76,7 @@ pub async fn exchange_code(
     code: String,
     pkce_verifier: PkceCodeVerifier,
     nonce: Nonce,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> Result<(String, String), Box<dyn std::error::Error>> {
     let http_client = get_http_client();
     let token_response = client
         .exchange_code(AuthorizationCode::new(code))?
@@ -118,5 +118,7 @@ pub async fn exchange_code(
     // Trích xuất subject (user ID từ OpenID Provider)
     let user_id = token_claims.subject().to_string();
 
-    Ok(user_id)
+    let email = token_claims.email().ok_or("No email in ID token claims")?.to_string();
+
+    Ok((user_id, email))
 }

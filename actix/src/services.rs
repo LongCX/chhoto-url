@@ -19,11 +19,19 @@ use crate::{auth, database};
 use crate::{auth::is_session_valid, utils};
 use crate::openid::{exchange_code, generate_auth_url, initialize_openid, CallbackRequest};
 use ChhotoError::{ClientError, ServerError};
+use uuid::Uuid;
 
 // Store the version number
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const SESSION_KEY_OIDC_STATE: &str = "oidc_state";
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct UserSessionData {
+    pub user_id: String,
+    pub email: Option<String>,
+    pub user_agent: Option<String>,
+}
 
 #[derive(Serialize)]
 struct AuthUrlResponse {
@@ -399,6 +407,7 @@ async fn openid_callback(
     data: web::Data<AppState>,
     session: Session,
     body: web::Json<CallbackRequest>,
+    http: HttpRequest,
 ) -> impl Responder {
     let config = &data.config;
     let openid_client = initialize_openid(config)
@@ -424,10 +433,23 @@ async fn openid_callback(
     )
         .await
     {
-        Ok(_) => {
-            session
-                .insert("chhoto-url-auth", auth::gen_token())
-                .expect("Error inserting auth token.");
+        Ok((user_id, email)) => {
+            let uuid = Uuid::new_v4();
+            let key = format!("{}:{}", "chhoto-url", uuid);
+            let user_agent = http
+                .headers()
+                .get("user-agent")
+                .and_then(|h| h.to_str().ok())
+                .unwrap_or("Unknown");
+            let session_data = UserSessionData {
+                user_id: user_id.clone(),
+                email: Some(email.to_string()),
+                user_agent: Some(user_agent.to_string()),
+            };
+            let value = serde_json::to_string(&session_data)
+                .expect("Failed to serialize session data");
+            session.insert(&key, value)
+                .expect("Failed to insert session data");
 
             HttpResponse::Ok().json(JSONResponse {
                 success: true,
@@ -449,12 +471,9 @@ async fn openid_callback(
 // There's no reason to be calling this route with an API key
 #[delete("/api/logout")]
 pub async fn logout(session: Session) -> HttpResponse {
-    if session.remove("chhoto-url-auth").is_some() {
-        info!("Successful logout.");
-        HttpResponse::Ok().body("Logged out!")
-    } else {
-        HttpResponse::Unauthorized().body("You don't seem to be logged in.")
-    }
+    session.purge();
+    info!("Successful logout.");
+    HttpResponse::Ok().body("Logged out!")
 }
 
 // Delete a given shortlink

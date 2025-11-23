@@ -6,8 +6,7 @@ use actix_web::HttpRequest;
 use argon2::{password_hash::PasswordHash, Argon2, PasswordVerifier};
 use log::{debug, warn};
 use passwords::PasswordGenerator;
-use std::{rc::Rc, time::SystemTime};
-
+use crate::services::UserSessionData;
 use crate::config::Config;
 use crate::services::JSONResponse;
 
@@ -108,39 +107,18 @@ pub fn get_api_header(req: &HttpRequest) -> Option<&str> {
 
 // Validate a session
 pub fn is_session_valid(session: Session) -> bool {
-    if let Ok(token) = session.get::<String>("chhoto-url-auth") {
-        is_token_valid(token.as_deref())
-    } else {
-        false
-    }
-}
-
-// Check a token cryptographically
-fn is_token_valid(token: Option<&str>) -> bool {
-    if let Some(token_body) = token {
-        let token_parts: Rc<[&str]> = token_body.split(';').collect();
-        if token_parts.len() < 2 {
-            false
-        } else {
-            let token_text = token_parts[0];
-            let token_time = token_parts[1].parse::<u64>().unwrap_or(0);
-            let time_now = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .expect("Time went backwards!")
-                .as_secs();
-            token_text == "chhoto-url-auth" && time_now < token_time + 1209600 // There are 1209600 seconds in 14 days
+    let entries = session.entries();
+    for (key, value) in entries.iter() {
+        // Chỉ check các key có prefix "chhoto-url:"
+        if key.starts_with("chhoto-url:") {
+            // `value` is a JSON string stored in the session; parse it directly
+            if let Ok(session_data) = serde_json::from_str::<UserSessionData>(value) {
+                // Nếu tìm thấy session data hợp lệ
+                if !session_data.user_id.is_empty() {
+                    return true;
+                }
+            }
         }
-    } else {
-        false
     }
-}
-
-// Generate a new cryptographic token
-pub fn gen_token() -> String {
-    let token_text = String::from("chhoto-url-auth");
-    let time = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .expect("Time went backwards!")
-        .as_secs();
-    format!("{token_text};{time}")
+    false
 }
