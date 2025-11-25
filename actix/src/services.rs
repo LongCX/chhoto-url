@@ -19,7 +19,6 @@ use crate::{auth, database};
 use crate::{auth::is_session_valid, utils};
 use crate::openid::{exchange_code, generate_auth_url, initialize_openid, CallbackRequest};
 use ChhotoError::{ClientError, ServerError};
-use uuid::Uuid;
 
 // Store the version number
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -434,21 +433,19 @@ async fn openid_callback(
         .await
     {
         Ok((user_id, email)) => {
-            let uuid = Uuid::new_v4();
-            let key = format!("{}:{}", "chhoto-url", uuid);
             let user_agent = http
                 .headers()
                 .get("user-agent")
                 .and_then(|h| h.to_str().ok())
                 .unwrap_or("Unknown");
             let session_data = UserSessionData {
-                user_id: user_id.clone(),
+                user_id: user_id.to_string(),
                 email: Some(email.to_string()),
                 user_agent: Some(user_agent.to_string()),
             };
-            let value = serde_json::to_string(&session_data)
+            let user_data = serde_json::to_string(&session_data)
                 .expect("Failed to serialize session data");
-            session.insert(&key, value)
+            session.insert("chhoto-url", user_data)
                 .expect("Failed to insert session data");
 
             HttpResponse::Ok().json(JSONResponse {

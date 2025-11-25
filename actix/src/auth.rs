@@ -6,9 +6,9 @@ use actix_web::HttpRequest;
 use argon2::{password_hash::PasswordHash, Argon2, PasswordVerifier};
 use log::{debug, warn};
 use passwords::PasswordGenerator;
-use crate::services::UserSessionData;
 use crate::config::Config;
 use crate::services::JSONResponse;
+use serde_json::Value;
 
 // If the api_key environment variable exists
 pub fn is_api_ok(http: HttpRequest, config: &Config) -> JSONResponse {
@@ -107,14 +107,10 @@ pub fn get_api_header(req: &HttpRequest) -> Option<&str> {
 
 // Validate a session
 pub fn is_session_valid(session: Session) -> bool {
-    let entries = session.entries();
-    for (key, value) in entries.iter() {
-        // Chỉ check các key có prefix "chhoto-url:"
-        if key.starts_with("chhoto-url:") {
-            // `value` is a JSON string stored in the session; parse it directly
-            if let Ok(session_data) = serde_json::from_str::<UserSessionData>(value) {
-                // Nếu tìm thấy session data hợp lệ
-                if !session_data.user_id.is_empty() {
+    if let Ok(Some(session_json_str)) = session.get::<String>("chhoto-url") {
+        if let Ok(json_value) = serde_json::from_str::<Value>(&session_json_str) {
+            if let Some(user_id) = json_value.get("user_id").and_then(|v| v.as_str()) {
+                if !user_id.is_empty() {
                     return true;
                 }
             }
