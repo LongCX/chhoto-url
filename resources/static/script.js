@@ -679,6 +679,7 @@ const doLoginOidc = async () => {
   const params = new URLSearchParams(window.location.search);
   const code = params.get('code');
   const state = params.get('state');
+  const iss = params.get('iss');
   const pathname = window.location.pathname;
 
   // Nếu là callback từ OIDC provider
