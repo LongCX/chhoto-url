@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::services::OidcState;
 use openidconnect::{core::{CoreClient, CoreProviderMetadata, CoreResponseType}, AuthenticationFlow, AuthorizationCode, ClientId, CsrfToken, EndpointMaybeSet, EndpointNotSet, EndpointSet, IssuerUrl, Nonce, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, Scope};
 use serde::Deserialize;
 
@@ -6,6 +7,7 @@ use serde::Deserialize;
 pub struct CallbackRequest {
     pub code: String,
     pub state: String,
+    pub iss: String,
 }
 
 fn get_http_client() -> reqwest::Client {
@@ -72,50 +74,58 @@ pub fn generate_auth_url(
 }
 
 pub async fn exchange_code(
+    config: &Config,
     client: &CoreClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointMaybeSet, EndpointMaybeSet>,
     code: String,
-    pkce_verifier: PkceCodeVerifier,
-    nonce: Nonce,
+    iss: String,
+    state: String,
+    oidc_state: OidcState
 ) -> Result<(String, String), Box<dyn std::error::Error>> {
+    if oidc_state.state.secret() != state.as_str() {
+        return Err("State invalid".into());
+    }
     let http_client = get_http_client();
     let token_response = client
         .exchange_code(AuthorizationCode::new(code))?
-        .set_pkce_verifier(pkce_verifier)
+        .set_pkce_verifier(oidc_state.pkce_verifier)
         .request_async(&http_client)
         .await?;
 
-    // Lấy ID token
     let id_token = token_response
         .extra_fields()
         .id_token()
         .ok_or("No ID token in response")?;
 
-    // Verify ID token và extract claims
     let token_claims = id_token
         .claims(
             &client.id_token_verifier(),
-            &nonce,
+            &oidc_state.nonce,
         )
         .map_err(|e| format!("Failed to verify ID token: {}", e))?;
 
-    // 1. Verify nonce từ ID token claims
     if let Some(token_nonce) = token_claims.nonce() {
-        if token_nonce.secret() != nonce.secret() {
+        if token_nonce.secret() != oidc_state.nonce.secret() {
             return Err("Nonce mismatch - potential replay attack!".into());
         }
     } else {
         return Err("No nonce in ID token claims".into());
     }
 
-    // 2. Verify issuer (tùy chọn - thư viện thường tự động verify)
-    let issuer = token_claims.issuer();
-    println!("Token issuer: {:?}", issuer);
+    let expected_issuer = config
+        .oidc_issuer_url
+        .as_ref()
+        .map(|u| u.as_str())
+        .unwrap_or(iss.as_str());
+    if iss.as_str() != expected_issuer {
+        return Err("Issuer invalid".into());
+    }
 
-    // 3. Verify audience (client_id)
     let audience = token_claims.audiences();
-    println!("Token audience: {:?}", audience);
+    let expected_audience = config.oidc_client_id.as_ref().unwrap();
+    if !audience.iter().any(|aud| aud.as_str() == expected_audience) {
+        return Err("Audience invalid".into());
+    }
 
-    // Trích xuất subject (user ID từ OpenID Provider)
     let user_id = token_claims.subject().to_string();
 
     let email = token_claims.email().ok_or("No email in ID token claims")?.to_string();

@@ -38,10 +38,10 @@ struct AuthUrlResponse {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct OidcState {
-    state: CsrfToken,
-    nonce: Nonce,
-    pkce_verifier: PkceCodeVerifier,
+pub struct OidcState {
+    pub state: CsrfToken,
+    pub nonce: Nonce,
+    pub pkce_verifier: PkceCodeVerifier,
 }
 
 // Error types
@@ -416,19 +416,13 @@ async fn openid_callback(
     let oidc_state = session
         .remove_as::<OidcState>(SESSION_KEY_OIDC_STATE).unwrap().unwrap();
 
-    if oidc_state.state.secret() != &body.state {
-        return HttpResponse::Unauthorized().json(JSONResponse {
-            success: false,
-            error: true,
-            reason: "Authentication failed!".to_string(),
-        });
-    }
-
     match exchange_code(
+        config,
         &openid_client,
         body.code.clone(),
-        oidc_state.pkce_verifier,
-        oidc_state.nonce
+        body.iss.clone(),
+        body.state.clone(),
+        oidc_state,
     )
         .await
     {
