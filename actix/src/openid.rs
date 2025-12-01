@@ -81,6 +81,14 @@ pub async fn exchange_code(
     state: String,
     oidc_state: OidcState
 ) -> Result<(String, String), Box<dyn std::error::Error>> {
+    let expected_issuer = config
+        .oidc_issuer_url
+        .as_ref()
+        .map(|u| u.as_str())
+        .unwrap_or(iss.as_str());
+    if iss.as_str() != expected_issuer {
+        return Err("Issuer invalid".into());
+    }
     if oidc_state.state.secret() != state.as_str() {
         return Err("State invalid".into());
     }
@@ -109,15 +117,6 @@ pub async fn exchange_code(
         }
     } else {
         return Err("No nonce in ID token claims".into());
-    }
-
-    let expected_issuer = config
-        .oidc_issuer_url
-        .as_ref()
-        .map(|u| u.as_str())
-        .unwrap_or(iss.as_str());
-    if iss.as_str() != expected_issuer {
-        return Err("Issuer invalid".into());
     }
 
     let audience = token_claims.audiences();
