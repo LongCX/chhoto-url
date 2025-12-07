@@ -24,18 +24,19 @@ COPY ./actix/src ./src
 RUN cargo build --release --target=$target --locked --bin chhoto-url
 RUN cp /chhoto-url/target/$target/release/chhoto-url /chhoto-url/release
 
-FROM alpine AS tmp
+FROM alpine:latest AS tz
+RUN apk add --no-cache tzdata
 RUN mkdir /db
 
-FROM gcr.io/distroless/cc-debian12:nonroot
-COPY --chown=nonroot:nonroot --from=tmp /db /db
-COPY --chown=nonroot:nonroot --from=builder /chhoto-url/release /app/chhoto-url
-COPY --chown=nonroot:nonroot ./resources /app/resources
+FROM scratch
+COPY --chown=65532:65532 --from=tz /db /db
+COPY --chown=65532:65532 --from=tz /usr/share/zoneinfo/Asia/Ho_Chi_Minh /etc/localtime
+COPY --chown=65532:65532 --from=builder /chhoto-url/release /app/chhoto-url
+COPY --chown=65532:65532 ./resources /app/resources
 WORKDIR /app
 
-USER nonroot
-
 VOLUME ["/db"]
-ENV TZ=Asia/Ho_Chi_Minh
+
+USER 65532:65532
 
 CMD ["/app/chhoto-url"]
