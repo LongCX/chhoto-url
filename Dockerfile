@@ -35,7 +35,7 @@ FROM scratch
 COPY --chown=65532:65532 --from=tz /db /db
 COPY --chown=65532:65532 --from=tz /usr/share/zoneinfo/Asia/Ho_Chi_Minh /etc/localtime
 COPY --chown=65532:65532 --from=builder /chhoto-url/release /app/chhoto-url
-COPY --chown=65532:65532 ./resources /app/resources
+COPY --chown=65532:65532 ./resources /resources
 COPY --chown=65532:65532 --from=distroless-localhealth / /
 
 VOLUME ["/db"]
